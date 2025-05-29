@@ -1,0 +1,114 @@
+import React, { useState, useEffect } from 'react';
+
+function App() {
+    const [cpf, setCpf] = useState('');
+    const [password, setPassword] = useState('');
+    const [captchaQuestion, setCaptchaQuestion] = useState('');
+    const [captchaAnswer, setCaptchaAnswer] = useState('');
+    const [expectedCaptchaAnswer, setExpectedCaptchaAnswer] = useState(0);
+    const [errorMessage, setErrorMessage] = useState('');
+
+    useEffect(() => {
+        generateCaptcha();
+    }, []);
+
+    const generateCaptcha = () => {
+        const num1 = Math.floor(Math.random() * 10) + 1;
+        const num2 = Math.floor(Math.random() * 10) + 1;
+        setCaptchaQuestion(`${num1} + ${num2} = ?`);
+        setExpectedCaptchaAnswer(num1 + num2);
+    };
+
+    const handleLogin = (e) => {
+        e.preventDefault();
+        setErrorMessage('');
+
+        // Hardcoded credentials for demonstration
+        const correctCpf = '123.456.789-00';
+        const correctPassword = 'adminpassword';
+
+        // Validate Captcha
+        if (parseInt(captchaAnswer) !== expectedCaptchaAnswer) {
+            setErrorMessage('Resposta do CAPTCHA incorreta. Tente novamente.');
+            generateCaptcha(); // Regenerate CAPTCHA on failure
+            setCaptchaAnswer('');
+            return;
+        }
+
+        // Validate CPF and Password
+        if (cpf === correctCpf && password === correctPassword) {
+            // Simulate successful login
+            sessionStorage.setItem('isLoggedIn', 'true'); // Store a flag in session storage
+            window.location.href = 'gestao.html'; // Redirect to the general management page
+        } else {
+            setErrorMessage('CPF ou Senha incorretos.');
+            generateCaptcha(); // Regenerate CAPTCHA on failure
+            setCaptchaAnswer('');
+        }
+    };
+
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+            <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+                <h2 className="text-3xl font-bold text-center text-blue-700 mb-6">Login de Gestão</h2>
+                <form onSubmit={handleLogin}>
+                    <div className="mb-4">
+                        <label htmlFor="cpf" className="block text-gray-700 text-sm font-bold mb-2">
+                            CPF:
+                        </label>
+                        <input
+                            type="text"
+                            id="cpf"
+                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Ex: 123.456.789-00"
+                            value={cpf}
+                            onChange={(e) => setCpf(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="mb-6">
+                        <label htmlFor="password" className="block text-gray-700 text-sm font-bold mb-2">
+                            Senha:
+                        </label>
+                        <input
+                            type="password"
+                            id="password"
+                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="********"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="mb-6">
+                        <label htmlFor="captcha" className="block text-gray-700 text-sm font-bold mb-2">
+                            CAPTCHA: {captchaQuestion}
+                        </label>
+                        <input
+                            type="text"
+                            id="captcha"
+                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Sua resposta"
+                            value={captchaAnswer}
+                            onChange={(e) => setCaptchaAnswer(e.target.value)}
+                            required
+                        />
+                    </div>
+                    {errorMessage && (
+                        <p className="text-red-500 text-xs italic mb-4 text-center">{errorMessage}</p>
+                    )}
+                    <div className="flex items-center justify-center">
+                        <button
+                            type="submit"
+                            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300 ease-in-out"
+                        >
+                            Entrar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+export default App;

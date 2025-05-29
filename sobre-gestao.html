@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão Sobre - Escola Floracy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Estilos personalizados, se houver */
+        body {
+            font-family: 'Inter', sans-serif; /* Usando uma fonte moderna */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root">
+    </div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+
+        // Início do código React da gestão de contatos
+            import React, { useState, useEffect } from 'react';
+            import { initializeApp } from 'firebase/app';
+            import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+            import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+
+            // Global variables provided by the Canvas environment
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+            function App() {
+                const [db, setDb] = useState(null);
+                const [auth, setAuth] = useState(null);
+                const [userId, setUserId] = useState(null);
+                const [isAuthReady, setIsAuthReady] = useState(false);
+
+                // State for About Page Text
+                const [aboutText, setAboutText] = useState('');
+
+                // Initialize Firebase and set up Auth listener
+                useEffect(() => {
+                    try {
+                        const app = initializeApp(firebaseConfig);
+                        const firestore = getFirestore(app);
+                        const firebaseAuth = getAuth(app);
+
+                        setDb(firestore);
+                        setAuth(firebaseAuth);
+
+                        // Sign in anonymously or with custom token
+                        const signIn = async () => {
+                            try {
+                                if (initialAuthToken) {
+                                    await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                                } else {
+                                    await signInAnonymously(firebaseAuth);
+                                }
+                            } catch (error) {
+                                console.error("Erro ao autenticar no Firebase:", error);
+                            }
+                        };
+
+                        signIn();
+
+                        // Listen for auth state changes
+                        const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+                            if (user) {
+                                setUserId(user.uid);
+                            } else {
+                                // If user logs out or token expires, sign in anonymously again
+                                signInAnonymously(firebaseAuth).then((userCredential) => {
+                                    setUserId(userCredential.user.uid);
+                                }).catch((error) => {
+                                    console.error("Erro ao tentar login anônimo após desautenticação:", error);
+                                });
+                            }
+                            setIsAuthReady(true);
+                        });
+
+                        return () => unsubscribe(); // Cleanup auth listener on unmount
+                    } catch (error) {
+                        console.error("Erro ao inicializar Firebase:", error);
+                    }
+                }, []);
+
+                // Fetch data from Firestore once auth is ready
+                useEffect(() => {
+                    if (db && userId && isAuthReady) {
+                        // Fetch About Page Text
+                        const settingsDocRef = doc(db, `artifacts/${appId}/users/${userId}/settings/aboutpage`);
+                        const unsubscribeSettings = onSnapshot(settingsDocRef, (docSnap) => {
+                            if (docSnap.exists()) {
+                                setAboutText(docSnap.data().aboutText || '');
+                            } else {
+                                setAboutText('A Escola Municipal Professora Floracy Bonfim Pereira de Araújo foi construída com recursos próprios da prefeitura no ano de 2002...'); // Default text
+                            }
+                        }, (error) => {
+                            console.error("Erro ao buscar texto da página Sobre:", error);
+                        });
+
+                        return () => {
+                            unsubscribeSettings();
+                        }; // Cleanup listener
+                    }
+                }, [db, userId, isAuthReady]);
+
+                // --- About Text Management Function ---
+                const handleSaveAboutText = async () => {
+                    try {
+                        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/settings/aboutpage`), {
+                            aboutText: aboutText,
+                            updatedAt: new Date(),
+                        }, { merge: true }); // Use merge to avoid overwriting other settings if they exist
+                    } catch (e) {
+                        console.error("Erro ao salvar texto da página Sobre: ", e);
+                    }
+                };
+
+                if (!isAuthReady) {
+                    return (
+                        <div className="flex items-center justify-center min-h-screen bg-gray-100">
+                            <p className="text-lg text-gray-700">Carregando painel de gestão da página Sobre...</p>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+                        {/* Cabeçalho Principal */}
+                        <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-lg shadow-lg mb-8">
+                            <h1 className="text-3xl sm:text-4xl font-bold text-center mb-2">Painel de Gestão da Página Sobre</h1>
+                            <p className="text-center text-blue-200">Gerencie o conteúdo da seção "Sobre" da escola</p>
+                            {userId && <p className="text-center text-sm mt-2">ID do Usuário: {userId}</p>}
+                        </header>
+
+                        {/* Navegação (para referência, não funcional para navegação interna na gestão) */}
+                        <nav className="bg-white p-4 rounded-lg shadow-md mb-8 flex flex-wrap justify-center gap-4">
+                            <a href="index.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Início</a>
+                            <a href="contatos.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Contatos (Público)</a>
+                            <a href="galeria.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Galeria</a>
+                            <a href="eventos.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Eventos (Público)</a>
+                            <a href="projetos.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Projetos</a>
+                            <a href="index.html#sobre" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Sobre (Público)</a>
+                            <a href="gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão Geral</a>
+                            <a href="projetos-gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão de Projetos</a>
+                            <a href="contatos-gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão de Contatos</a>
+                            <a href="eventos-gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão de Eventos</a>
+                        </nav>
+
+                        {/* Seção de Gestão do Texto da Página Sobre */}
+                        <section className="bg-white p-6 rounded-lg shadow-md mb-8">
+                            <h2 className="text-2xl font-bold text-blue-700 mb-4 border-b-2 border-blue-300 pb-2">Gerenciar Texto da Página "Sobre"</h2>
+                            <div className="flex flex-col gap-4">
+                                <textarea
+                                    placeholder="Edite o texto da seção 'Sobre' aqui..."
+                                    rows="10"
+                                    className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 resize-y"
+                                    value={aboutText}
+                                    onChange={(e) => setAboutText(e.target.value)}
+                                ></textarea>
+                                <button
+                                    onClick={handleSaveAboutText}
+                                    className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition duration-300 ease-in-out"
+                                >
+                                    Salvar Texto da Página Sobre
+                                </button>
+                            </div>
+                        </section>
+
+                        {/* Rodapé Consistente */}
+                        <footer id="footer-contatos" className="bg-blue-700 text-white p-6 rounded-lg shadow-lg mt-8 text-center">
+                            <div className="flex flex-col md:flex-row justify-center items-center gap-4 mb-4">
+                                <div className="flex flex-col items-center md:items-end">
+                                    <p className="font-semibold">Endereço:</p>
+                                    <p>Rua 07 - Quadra 39-lotes 07, 08, 09 e 10, Setor Vila Nova, Paranã-TO, 77360-000</p>
+                                </div>
+                                <div className="flex flex-col items-center md:items-start">
+                                    <p className="font-semibold">Telefone: (63) 3371-1506</p>
+                                    <p className="font-semibold">Email: semed.floracy@gmail.com</p>
+                                </div>
+                                <div className="flex space-x-4 mt-2 md:mt-0 md:ml-4">
+                                    <a href="#" className="text-white hover:text-blue-200 transition duration-300 ease-in-out text-2xl" aria-label="Facebook">
+                                        <i className="fab fa-facebook-square"></i>
+                                    </a>
+                                    <a href="#" className="text-white hover:text-blue-200 transition duration-300 ease-in-out text-2xl" aria-label="Instagram">
+                                        <i className="fab fa-instagram"></i>
+                                    </a>
+                                    <a href="#" className="text-white hover:text-blue-200 transition duration-300 ease-in-out text-2xl" aria-label="Twitter">
+                                        <i className="fab fa-twitter-square"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <div className="border-t border-blue-600 pt-4 mt-6 text-center">
+                                <p>&copy; 2023 Escola Municipal Professora Floracy Bonfim Pereira de Araújo. Todos os direitos reservados.</p>
+                            </div>
+                        </footer>
+                    </div>
+                );
+            }
+
+            export default App;
+
+        // Monta o componente React no elemento com id="root"
+        ReactDOM.render(<App />, document.getElementById('root'));
+        // Fim do código React da gestão de contatos
+    </script>
+</body>
+</html>

@@ -1,0 +1,390 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+
+// Global variables provided by the Canvas environment
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? initialAuthToken : null;
+
+function App() {
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+
+    // State for Photos
+    const [photos, setPhotos] = useState([]);
+    const [newPhotoUrl, setNewPhotoUrl] = useState('');
+    const [newPhotoDescription, setNewPhotoDescription] = useState('');
+    const [editingPhotoId, setEditingPhotoId] = useState(null);
+
+    // State for Videos
+    const [videos, setVideos] = useState([]);
+    const [newVideoUrl, setNewVideoUrl] = useState('');
+    const [newVideoDescription, setNewVideoDescription] = useState('');
+    const [editingVideoId, setEditingVideoId] = useState(null);
+
+
+    // Initialize Firebase and set up Auth listener
+    useEffect(() => {
+        try {
+            const app = initializeApp(firebaseConfig);
+            const firestore = getFirestore(app);
+            const firebaseAuth = getAuth(app);
+
+            setDb(firestore);
+            setAuth(firebaseAuth);
+
+            // Sign in anonymously or with custom token
+            const signIn = async () => {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(firebaseAuth);
+                    }
+                } catch (error) {
+                    console.error("Erro ao autenticar no Firebase:", error);
+                }
+            };
+
+            signIn();
+
+            // Listen for auth state changes
+            const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                } else {
+                    // If user logs out or token expires, sign in anonymously again
+                    signInAnonymously(firebaseAuth).then((userCredential) => {
+                        setUserId(userCredential.user.uid);
+                    }).catch((error) => {
+                        console.error("Erro ao tentar login anônimo após desautenticação:", error);
+                    });
+                }
+                setIsAuthReady(true);
+            });
+
+            return () => unsubscribe(); // Cleanup auth listener on unmount
+        } catch (error) {
+            console.error("Erro ao inicializar Firebase:", error);
+        }
+    }, []);
+
+    // Fetch data from Firestore once auth is ready
+    useEffect(() => {
+        if (db && userId && isAuthReady) {
+            // Fetch Photos
+            const photosQuery = collection(db, `artifacts/${appId}/users/${userId}/photos`);
+            const unsubscribePhotos = onSnapshot(photosQuery, (snapshot) => {
+                const fetchedPhotos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setPhotos(fetchedPhotos);
+            }, (error) => {
+                console.error("Erro ao buscar fotos:", error);
+            });
+
+            // Fetch Videos
+            const videosQuery = collection(db, `artifacts/${appId}/users/${userId}/videos`);
+            const unsubscribeVideos = onSnapshot(videosQuery, (snapshot) => {
+                const fetchedVideos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setVideos(fetchedVideos);
+            }, (error) => {
+                console.error("Erro ao buscar vídeos:", error);
+            });
+
+            return () => {
+                unsubscribePhotos();
+                unsubscribeVideos();
+            }; // Cleanup listeners
+        }
+    }, [db, userId, isAuthReady]);
+
+    // --- Photo Management Functions ---
+    const handleAddOrUpdatePhoto = async () => {
+        if (!newPhotoUrl.trim() || !newPhotoDescription.trim()) return;
+        try {
+            if (editingPhotoId) {
+                // Update existing photo
+                await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/photos`, editingPhotoId), {
+                    url: newPhotoUrl,
+                    description: newPhotoDescription,
+                    updatedAt: new Date(),
+                });
+                setEditingPhotoId(null);
+            } else {
+                // Add new photo
+                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/photos`), {
+                    url: newPhotoUrl,
+                    description: newPhotoDescription,
+                    createdAt: new Date(),
+                });
+            }
+            setNewPhotoUrl('');
+            setNewPhotoDescription('');
+        } catch (e) {
+            console.error("Erro ao adicionar/atualizar foto: ", e);
+        }
+    };
+
+    const handleEditPhoto = (photoItem) => {
+        setNewPhotoUrl(photoItem.url);
+        setNewPhotoDescription(photoItem.description);
+        setEditingPhotoId(photoItem.id);
+    };
+
+    const handleDeletePhoto = async (id) => {
+        try {
+            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/photos`, id));
+        } catch (e) {
+            console.error("Erro ao deletar foto: ", e);
+        }
+    };
+
+    // --- Video Management Functions ---
+    const handleAddOrUpdateVideo = async () => {
+        if (!newVideoUrl.trim() || !newVideoDescription.trim()) return;
+        try {
+            if (editingVideoId) {
+                // Update existing video
+                await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/videos`, editingVideoId), {
+                    url: newVideoUrl,
+                    description: newVideoDescription,
+                    updatedAt: new Date(),
+                });
+                setEditingVideoId(null);
+            } else {
+                // Add new video
+                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/videos`), {
+                    url: newVideoUrl,
+                    description: newVideoDescription,
+                    createdAt: new Date(),
+                });
+            }
+            setNewVideoUrl('');
+            setNewVideoDescription('');
+        } catch (e) {
+            console.error("Erro ao adicionar/atualizar vídeo: ", e);
+        }
+    };
+
+    const handleEditVideo = (videoItem) => {
+        setNewVideoUrl(videoItem.url);
+        setNewVideoDescription(videoItem.description);
+        setEditingVideoId(videoItem.id);
+    };
+
+    const handleDeleteVideo = async (id) => {
+        try {
+            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/videos`, id));
+        } catch (e) {
+            console.error("Erro ao deletar vídeo: ", e);
+        }
+    };
+
+    if (!isAuthReady) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-gray-100">
+                <p className="text-lg text-gray-700">Carregando painel de gestão da galeria...</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+            {/* Cabeçalho Principal */}
+            <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-lg shadow-lg mb-8">
+                <h1 className="text-3xl sm:text-4xl font-bold text-center mb-2">Painel de Gestão da Galeria</h1>
+                <p className="text-center text-blue-200">Gerencie as fotos e vídeos da escola</p>
+                {userId && <p className="text-center text-sm mt-2">ID do Usuário: {userId}</p>}
+            </header>
+
+            {/* Navegação (para referência, não funcional para navegação interna na gestão) */}
+            <nav className="bg-white p-4 rounded-lg shadow-md mb-8 flex flex-wrap justify-center gap-4">
+                <a href="index.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Início</a>
+                <a href="contatos.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Contatos (Público)</a>
+                <a href="galeria.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Galeria (Público)</a>
+                <a href="eventos.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Eventos (Público)</a>
+                <a href="projetos.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Projetos</a>
+                <a href="index.html#sobre" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Sobre (Público)</a>
+                <a href="gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão Geral</a>
+                <a href="projetos-gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão de Projetos</a>
+                <a href="contatos-gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão de Contatos</a>
+                <a href="eventos-gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão de Eventos</a>
+                <a href="sobre-gestao.html" className="text-blue-700 hover:text-blue-900 font-semibold px-4 py-2 rounded-md transition duration-300 ease-in-out hover:bg-blue-100">Gestão da Página Sobre</a>
+            </nav>
+
+            {/* Seção de Gestão de Fotos */}
+            <section className="bg-white p-6 rounded-lg shadow-md mb-8">
+                <h2 className="text-2xl font-bold text-blue-700 mb-4 border-b-2 border-blue-300 pb-2">Gerenciar Fotos</h2>
+                <div className="flex flex-col gap-4 mb-4">
+                    <input
+                        type="text"
+                        placeholder="URL da Foto"
+                        className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                        value={newPhotoUrl}
+                        onChange={(e) => setNewPhotoUrl(e.target.value)}
+                    />
+                    <textarea
+                        placeholder="Descrição da Foto"
+                        rows="2"
+                        className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 resize-y"
+                        value={newPhotoDescription}
+                        onChange={(e) => setNewPhotoDescription(e.target.value)}
+                    ></textarea>
+                    <button
+                        onClick={handleAddOrUpdatePhoto}
+                        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition duration-300 ease-in-out"
+                    >
+                        {editingPhotoId ? 'Atualizar Foto' : 'Adicionar Foto'}
+                    </button>
+                    {editingPhotoId && (
+                        <button
+                            onClick={() => {
+                                setNewPhotoUrl('');
+                                setNewPhotoDescription('');
+                                setEditingPhotoId(null);
+                            }}
+                            className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out"
+                        >
+                            Cancelar Edição
+                        </button>
+                    )}
+                </div>
+                <h3 className="text-xl font-bold text-blue-700 mb-4 mt-6">Fotos Existentes</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {photos.map((photo) => (
+                        <div key={photo.id} className="bg-gray-100 p-4 rounded-lg shadow-sm flex flex-col justify-between">
+                            <img
+                                src={photo.url}
+                                alt={photo.description}
+                                className="w-full h-32 object-cover rounded-md mb-2"
+                                onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/400x200/cccccc/333333?text=Erro+ao+carregar+imagem"; }}
+                            />
+                            <p className="text-gray-600 text-sm mb-3">{photo.description}</p>
+                            <div className="flex justify-end gap-2">
+                                <button
+                                    onClick={() => handleEditPhoto(photo)}
+                                    className="text-blue-500 hover:text-blue-700 transition duration-300 ease-in-out"
+                                    aria-label="Editar Foto"
+                                >
+                                    <i className="fas fa-edit"></i>
+                                </button>
+                                <button
+                                    onClick={() => handleDeletePhoto(photo.id)}
+                                    className="text-red-500 hover:text-red-700 transition duration-300 ease-in-out"
+                                    aria-label="Deletar Foto"
+                                >
+                                    <i className="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {photos.length === 0 && <p className="text-gray-500 col-span-full text-center">Nenhuma foto adicionada ainda.</p>}
+                </div>
+            </section>
+
+            {/* Seção de Gestão de Vídeos */}
+            <section className="bg-white p-6 rounded-lg shadow-md mb-8">
+                <h2 className="text-2xl font-bold text-blue-700 mb-4 border-b-2 border-blue-300 pb-2">Gerenciar Vídeos</h2>
+                <div className="flex flex-col gap-4 mb-4">
+                    <input
+                        type="text"
+                        placeholder="URL do Vídeo (ex: link do YouTube)"
+                        className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                        value={newVideoUrl}
+                        onChange={(e) => setNewVideoUrl(e.target.value)}
+                    />
+                    <textarea
+                        placeholder="Descrição do Vídeo"
+                        rows="2"
+                        className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 resize-y"
+                        value={newVideoDescription}
+                        onChange={(e) => setNewVideoDescription(e.target.value)}
+                    ></textarea>
+                    <button
+                        onClick={handleAddOrUpdateVideo}
+                        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition duration-300 ease-in-out"
+                    >
+                        {editingVideoId ? 'Atualizar Vídeo' : 'Adicionar Vídeo'}
+                    </button>
+                    {editingVideoId && (
+                        <button
+                            onClick={() => {
+                                setNewVideoUrl('');
+                                setNewVideoDescription('');
+                                setEditingVideoId(null);
+                            }}
+                            className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out"
+                        >
+                            Cancelar Edição
+                        </button>
+                    )}
+                </div>
+                <h3 className="text-xl font-bold text-blue-700 mb-4 mt-6">Vídeos Existentes</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {videos.map((video) => (
+                        <div key={video.id} className="bg-gray-100 p-4 rounded-lg shadow-sm flex flex-col justify-between">
+                            {/* Placeholder para vídeo - em uma aplicação real, você embedaria o vídeo */}
+                            <div className="w-full h-32 bg-gray-300 rounded-md flex items-center justify-center text-gray-600 mb-2">
+                                <i className="fas fa-video text-4xl"></i>
+                            </div>
+                            <p className="text-gray-600 text-sm mb-3">{video.description}</p>
+                            <a href={video.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm truncate">
+                                {video.url}
+                            </a>
+                            <div className="flex justify-end gap-2 mt-3">
+                                <button
+                                    onClick={() => handleEditVideo(video)}
+                                    className="text-blue-500 hover:text-blue-700 transition duration-300 ease-in-out"
+                                    aria-label="Editar Vídeo"
+                                >
+                                    <i className="fas fa-edit"></i>
+                                </button>
+                                <button
+                                    onClick={() => handleDeleteVideo(video.id)}
+                                    className="text-red-500 hover:text-red-700 transition duration-300 ease-in-out"
+                                    aria-label="Deletar Vídeo"
+                                >
+                                    <i className="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {videos.length === 0 && <p className="text-gray-500 col-span-full text-center">Nenhum vídeo adicionado ainda.</p>}
+                </div>
+            </section>
+
+            {/* Rodapé Consistente */}
+            <footer id="footer-contatos" className="bg-blue-700 text-white p-6 rounded-lg shadow-lg mt-8 text-center">
+                <div className="flex flex-col md:flex-row justify-center items-center gap-4 mb-4">
+                    <div className="flex flex-col items-center md:items-end">
+                        <p className="font-semibold">Endereço:</p>
+                        <p>Rua 07 - Quadra 39-lotes 07, 08, 09 e 10, Setor Vila Nova, Paranã-TO, 77360-000</p>
+                    </div>
+                    <div className="flex flex-col items-center md:items-start">
+                        <p className="font-semibold">Telefone: (63) 3371-1506</p>
+                        <p className="font-semibold">Email: semed.floracy@gmail.com</p>
+                    </div>
+                    <div className="flex space-x-4 mt-2 md:mt-0 md:ml-4">
+                        <a href="#" className="text-white hover:text-blue-200 transition duration-300 ease-in-out text-2xl" aria-label="Facebook">
+                            <i className="fab fa-facebook-square"></i>
+                        </a>
+                        <a href="#" className="text-white hover:text-blue-200 transition duration-300 ease-in-out text-2xl" aria-label="Instagram">
+                            <i className="fab fa-instagram"></i>
+                        </a>
+                        <a href="#" className="text-white hover:text-blue-200 transition duration-300 ease-in-out text-2xl" aria-label="Twitter">
+                            <i className="fab fa-twitter-square"></i>
+                        </a>
+                    </div>
+                </div>
+                <div className="border-t border-blue-600 pt-4 mt-6 text-center">
+                    <p>&copy; 2023 Escola Municipal Professora Floracy Bonfim Pereira de Araújo. Todos os direitos reservados.</p>
+                </div>
+            </footer>
+        </div>
+    );
+}
+
+export default App;
